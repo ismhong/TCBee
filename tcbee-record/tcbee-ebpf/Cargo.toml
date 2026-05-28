@@ -2,13 +2,15 @@
 name = "tcbee-ebpf"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
-tcbee-common = { path = "../tcbee-common" }
+tcbee-common = { path = "../tcbee-common", features = ["ebpf"]}
+kernel-read-derive = { path = "../kernel-read-derive"}
 
 aya-ebpf = { workspace = true }
-aya-log-ebpf = { workspace = true }
 memoffset = "0.9.1"
+
 
 [build-dependencies]
 which = { workspace = true }

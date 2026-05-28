@@ -1,24 +1,18 @@
-use std::{error::Error};
+use std::error::Error;
 
 use anyhow::Context;
 use aya::{maps::RingBuf, programs::FEntry, Btf, Ebpf};
-use tcbee_common::bindings::tcp_sock::cwnd_trace_entry;
-use tokio::task::{self, JoinHandle};
-use tokio_util::sync::CancellationToken;
+use tcbee_common::{bindings::tcp_sock::cwnd_trace_entry, prog_bindings::TraceInoutProbe};
 
-use crate::{eBPF::errors::EBPFRunnerError, handlers::BufferHandler};
+use crate::{
+    eBPF::{ebpf_runner::prepend_string, errors::EBPFRunnerError},
+    writer::Writer,
+};
 
-
-pub struct CwndTracer {
-}
+pub struct CwndTracer {}
 
 impl CwndTracer {
-    pub fn spawn(
-        ebpf: &mut Ebpf,
-        token: CancellationToken,
-        send_file_path: String,
-        recv_file_path: String,
-    ) -> Result<Vec<JoinHandle<()>>, Box<dyn Error>> {
+    pub fn spawn(ebpf: &mut Ebpf, dir: String, writer: &mut Writer) -> Result<(), Box<dyn Error>> {
         let btf = Btf::from_sys_fs().context("BTF from sysfs")?;
 
         // Outgoing TCP
@@ -41,48 +35,26 @@ impl CwndTracer {
                 })?;
 
         let buff: RingBuf<aya::maps::MapData> = RingBuf::try_from(map)?;
-
-        // Create handler object
-        let mut handler: BufferHandler<cwnd_trace_entry> = BufferHandler::<cwnd_trace_entry>::new(
-            "TCP_SEND_CWND_EVENTS",
-            token.clone(),
+        writer.register::<cwnd_trace_entry>(
             buff,
-            send_file_path
-        )
-        .unwrap();
-
-        // Start thread and store join handle
-        let send_thread: JoinHandle<()> = task::spawn(async move {
-            handler.run().await;
-        });
-
+            prepend_string(cwnd_trace_entry::OUT_FILE.to_string(), &dir),
+        )?;
 
         // Start SOCK_RECV handling
         // Get queue from
-        let map =
-            ebpf.take_map("TCP_RECEIVE_CWND_EVENTS")
-                .ok_or(EBPFRunnerError::QueueNotFoundError {
-                    name: "TCP_RECEIVE_CWND_EVENTS".to_string(),
-                    trace: "CWND Tracer tcp_recvmsg".to_string(),
-                })?;
+        let map = ebpf.take_map("TCP_RECEIVE_CWND_EVENTS").ok_or(
+            EBPFRunnerError::QueueNotFoundError {
+                name: "TCP_RECEIVE_CWND_EVENTS".to_string(),
+                trace: "CWND Tracer tcp_recvmsg".to_string(),
+            },
+        )?;
 
         let buff: RingBuf<aya::maps::MapData> = RingBuf::try_from(map)?;
-
-        // Create handler object
-        let mut handler: BufferHandler<cwnd_trace_entry> = BufferHandler::<cwnd_trace_entry>::new(
-            "TCP_RECEIVE_CWND_EVENTS",
-            token,
+        writer.register::<cwnd_trace_entry>(
             buff,
-            recv_file_path,
-        )
-        .unwrap();
+            prepend_string(cwnd_trace_entry::IN_FILE.to_string(), &dir),
+        )?;
 
-        // Start thread and store join handle
-        let recv_thread: JoinHandle<()> = task::spawn(async move {
-            handler.run().await;
-        });
-
-
-        Ok(vec![send_thread,recv_thread])
+        Ok(())
     }
 }

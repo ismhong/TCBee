@@ -3,14 +3,14 @@ use std::{fs::File, os::linux::fs::MetadataExt};
 use log::error;
 
 pub struct FileTracker {
-    files: Vec<File>
+    files: Vec<File>,
 }
 
 impl FileTracker {
-    pub fn new() -> FileTracker {
-        // Open all .tcp files to watch file size!
+    pub fn new(dir: &str) -> FileTracker {
+        let pattern = format!("{}/*.tcp", dir);
         let mut files: Vec<File> = Vec::new();
-        if let Ok(paths) = glob::glob("/tmp/*.tcp") {
+        if let Ok(paths) = glob::glob(&pattern) {
             for p in paths {
                 if let Ok(path) = p {
                     let open = File::open(path);
@@ -20,21 +20,24 @@ impl FileTracker {
                 }
             }
         } else {
-            error!("No *.tcp files found in /tmp/! Will not display write speed corrently!")
+            error!(
+                "No *.tcp files found in {}! Will not display write speed correctly!",
+                dir
+            )
         }
 
         FileTracker { files: files }
     }
     pub fn get_file_size(&self) -> u64 {
-         // Get sum of file sizes
-         let mut sum: u64 = 0;
-         for f in self.files.iter() {
-             if let Ok(meta) = f.metadata() {
-                 sum = sum + meta.st_size();
-             } else {
-                 error!("Could not get metadata of file {:?}",f);
-             }
-         }
-         sum
+        // Get sum of file sizes
+        let mut sum: u64 = 0;
+        for f in self.files.iter() {
+            if let Ok(meta) = f.metadata() {
+                sum = sum + meta.st_size();
+            } else {
+                error!("Could not get metadata of file {:?}", f);
+            }
+        }
+        sum
     }
 }

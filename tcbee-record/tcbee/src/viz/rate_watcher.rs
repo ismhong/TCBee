@@ -1,14 +1,17 @@
-use std::{ops::{AddAssign, Sub}, time::Duration};
+use std::{
+    ops::{AddAssign, Sub},
+    time::Duration,
+};
 
 use aya::{maps::PerCpuArray, util::nr_cpus, Pod};
 use log::error;
-
 
 // TODO: make more generic to handle float maps as well?
 pub struct RateWatcher<T: Pod + AddAssign + Sub> {
     map: PerCpuArray<aya::maps::MapData, T>,
     suffix: String,
     last_val: T,
+    needs_baseline: bool,
     name: String,
 }
 
@@ -20,10 +23,11 @@ impl<T: Pod + AddAssign + Default + Sub> RateWatcher<T> {
         name: String,
     ) -> RateWatcher<T> {
         RateWatcher {
-            map: map,
-            suffix: suffix,
+            map,
+            suffix,
             last_val: init_val,
-            name: name,
+            needs_baseline: true,
+            name,
         }
     }
     pub fn get_rate_string(&mut self, elapsed: Duration) -> String
@@ -39,6 +43,16 @@ impl<T: Pod + AddAssign + Default + Sub> RateWatcher<T> {
         f64: From<<T as Sub>::Output>,
     {
         let sum = self.get_counter_sum();
+
+        if self.needs_baseline {
+            self.last_val = sum;
+            self.needs_baseline = false;
+            return 0.0;
+        }
+
+        if elapsed.is_zero() {
+            return 0.0;
+        }
 
         // TODO: better handling?
         let rate = f64::try_from(sum - self.last_val).unwrap_or_else(|_| -1.0)
@@ -109,5 +123,3 @@ impl<T: Pod + AddAssign + Default + Sub> RateWatcher<T> {
         }
     }
 }
-
-

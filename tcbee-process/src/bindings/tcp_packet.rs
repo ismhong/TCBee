@@ -1,9 +1,9 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 
 use serde::Deserialize;
 use ts_storage::{DataValue, IpTuple};
 
-use crate::{db_writer::DBOperation, flow_tracker::EventIndexer, reader::FromBuffer};
+use crate::{bindings::event_indexer::EventIndexer, ip::ip_addr_from_16_bytes, reader::FromBuffer};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -37,27 +37,26 @@ impl FromBuffer for TcpPacket {
         } else {
             try_deserialize.unwrap()
         }
-
     }
     const ENTRY_SIZE: usize = 74;
 }
 
 impl EventIndexer for TcpPacket {
-    fn get_field(&self, index: usize) -> Option<DataValue> {
+    fn get_field(&self, index: usize) -> DataValue {
         match index {
-            0 => if self.seq > 0 {Some(DataValue::Int(self.seq as i64))} else {None},
-            1 => if self.ack > 0 {Some(DataValue::Int(self.ack as i64))} else {None},
-            2 => if self.window > 0 {Some(DataValue::Int(self.window as i64))} else {None},
+            0 => DataValue::Int(self.seq as i64),
+            1 => DataValue::Int(self.ack as i64),
+            2 => DataValue::Int(self.window as i64),
             // Only add Flags when true to save space
-            // TODO: 
-            3 => if self.flag_urg { Some(DataValue::Boolean(true)) } else {None},
-            4 => if self.flag_ack { Some(DataValue::Boolean(true)) } else {None},
-            5 => if self.flag_psh { Some(DataValue::Boolean(true)) } else {None},
-            6 => if self.flag_rst { Some(DataValue::Boolean(true)) } else {None},
-            7 => if self.flag_syn { Some(DataValue::Boolean(true)) } else {None},
-            8 => if self.flag_fin { Some(DataValue::Boolean(true)) } else {None},
-            9 => if self.checksum > 0 {Some(DataValue::Int(self.checksum as i64))} else {None},
-            _ => None, // TODO: better error handling
+            // TODO:
+            3 => DataValue::Boolean(true),
+            4 => DataValue::Boolean(true),
+            5 => DataValue::Boolean(true),
+            6 => DataValue::Boolean(true),
+            7 => DataValue::Boolean(true),
+            8 => DataValue::Boolean(true),
+            9 => DataValue::Int(self.checksum as i64),
+            _ => panic!("Tried to access out of bounds index!"), // TODO: better error handling
         }
     }
     fn get_default_field(&self, index: usize) -> DataValue {
@@ -98,12 +97,12 @@ impl EventIndexer for TcpPacket {
             src = IpAddr::V4(Ipv4Addr::from(self.saddr));
             dst = IpAddr::V4(Ipv4Addr::from(self.daddr));
         } else {
-            src = IpAddr::V6(Ipv6Addr::from(self.saddr_v6));
-            dst = IpAddr::V6(Ipv6Addr::from(self.daddr_v6));
+            src = ip_addr_from_16_bytes(self.saddr_v6);
+            dst = ip_addr_from_16_bytes(self.daddr_v6);
         }
         IpTuple {
-            src: src,
-            dst: dst,
+            src,
+            dst,
             sport: self.sport as i64,
             dport: self.dport as i64,
             l4proto: 6,
@@ -115,8 +114,8 @@ impl EventIndexer for TcpPacket {
     fn get_timestamp(&self) -> f64 {
         self.time as f64
     }
-    fn as_db_op(self) -> DBOperation {
-        DBOperation::Packet(self)
+    fn check_divider(&self) -> bool {
+        self.div == 0xFFFFFFFFu32.to_be_bytes()
     }
     fn get_struct_length(&self) -> usize {
         74

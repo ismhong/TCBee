@@ -1,10 +1,11 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 
 use serde::Deserialize;
 use ts_storage::{DataValue, IpTuple};
 
 use crate::{
-    db_writer::DBOperation, flow_tracker::{EventIndexer, AF_INET}, reader::FromBuffer, shorten_to_ipv4, shorten_to_ipv6
+    bindings::event_indexer::EventIndexer, flow_tracker::AF_INET, ip::ip_addr_from_16_bytes,
+    reader::FromBuffer, shorten_to_ipv4, shorten_to_ipv6,
 };
 
 #[repr(C)]
@@ -43,19 +44,19 @@ impl FromBuffer for TcpProbe {
 }
 
 impl EventIndexer for TcpProbe {
-    fn get_field(&self, index: usize) -> Option<DataValue> {
+    fn get_field(&self, index: usize) -> DataValue {
         match index {
-            0 => if self.mark > 0 {Some(DataValue::Int(self.mark as i64))} else {None},
-            1 => if self.data_len > 0 {Some(DataValue::Int(self.data_len as i64))} else {None},
-            2 => if self.snd_nxt > 0 {Some(DataValue::Int(self.snd_nxt as i64))} else {None},
-            3 => if self.snd_una > 0 {Some(DataValue::Int(self.snd_una as i64))} else {None},
-            4 => if self.snd_cwnd > 0 {Some(DataValue::Int(self.snd_cwnd as i64))} else {None},
-            5 => if self.ssthresh > 0 {Some(DataValue::Int(self.ssthresh as i64))} else {None},
-            6 => if self.snd_wnd > 0 {Some(DataValue::Int(self.snd_wnd as i64))} else {None},
-            7 => if self.srtt > 0 {Some(DataValue::Int(self.srtt as i64))} else {None},
-            8 => if self.rcv_wnd > 0 {Some(DataValue::Int(self.rcv_wnd as i64))} else {None},
-            9 => if self.sock_cookie > 0 {Some(DataValue::Int(self.sock_cookie as i64))} else {None},
-            _ => None, // TODO: better error handling
+            0 => DataValue::Int(self.mark as i64),
+            1 => DataValue::Int(self.data_len as i64),
+            2 => DataValue::Int(self.snd_nxt as i64),
+            3 => DataValue::Int(self.snd_una as i64),
+            4 => DataValue::Int(self.snd_cwnd as i64),
+            5 => DataValue::Int(self.ssthresh as i64),
+            6 => DataValue::Int(self.snd_wnd as i64),
+            7 => DataValue::Int(self.srtt as i64),
+            8 => DataValue::Int(self.rcv_wnd as i64),
+            9 => DataValue::Int(self.sock_cookie as i64),
+            _ => panic!("Tried to access out of bounds index!"), // TODO: better error handling
         }
     }
     fn get_default_field(&self, index: usize) -> DataValue {
@@ -91,14 +92,14 @@ impl EventIndexer for TcpProbe {
     fn get_ip_tuple(&self) -> IpTuple {
         let src: IpAddr;
         let dst: IpAddr;
-        
+
         if self.family == AF_INET {
             //IPv4
             src = IpAddr::V4(Ipv4Addr::from(shorten_to_ipv4(self.saddr)));
             dst = IpAddr::V4(Ipv4Addr::from(shorten_to_ipv4(self.daddr)));
         } else {
-            src = IpAddr::V6(Ipv6Addr::from(shorten_to_ipv6(self.saddr)));
-            dst = IpAddr::V6(Ipv6Addr::from(shorten_to_ipv6(self.daddr)));
+            src = ip_addr_from_16_bytes(shorten_to_ipv6(self.saddr));
+            dst = ip_addr_from_16_bytes(shorten_to_ipv6(self.daddr));
         }
         IpTuple {
             src: src,
@@ -114,8 +115,8 @@ impl EventIndexer for TcpProbe {
     fn get_timestamp(&self) -> f64 {
         self.time as f64
     }
-    fn as_db_op(self) -> DBOperation {
-        DBOperation::Probe(self)
+    fn check_divider(&self) -> bool {
+        self.div == 0xFFFFFFFFu32.to_be_bytes()
     }
     fn get_struct_length(&self) -> usize {
         116
