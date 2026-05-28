@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            musl-tools cmake \
+            cmake \
             llvm clang \
             libelf-dev libclang-dev \
             pkg-config \
@@ -28,8 +28,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
 
       - name: Install Rust Nightly
         run: rustup toolchain install nightly --component rust-src
@@ -37,10 +35,10 @@ jobs:
       - name: Install bpf-linker
         run: cargo install bpf-linker
 
-      - name: Build tcbee-record (static)
+      - name: Build tcbee-record
         run: |
           cd tcbee-record
-          cargo build --release --target x86_64-unknown-linux-musl
+          cargo build --release
 
       - name: Build tcbee-process (bundled)
         run: |
@@ -60,7 +58,7 @@ jobs:
       - name: Package release zip
         run: |
           mkdir -p release
-          cp tcbee-record/target/x86_64-unknown-linux-musl/release/tcbee-record release/
+          cp tcbee-record/target/release/tcbee-record release/
           cp tcbee-process/target/release/tcbee-process release/
           cp tcbee-viz/target/release/tcbee-viz release/
           cp tcbee-live/target/release/tcbee-live release/
