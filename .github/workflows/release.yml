@@ -42,11 +42,10 @@ jobs:
           cd tcbee-record
           cargo build --release --target x86_64-unknown-linux-musl
 
-      - name: Build tcbee-process (static, bundled)
+      - name: Build tcbee-process (bundled)
         run: |
           cd tcbee-process
-          cargo build --release --target x86_64-unknown-linux-musl \
-            --features ts_storage/bundled
+          cargo build --release --features ts_storage/bundled
 
       - name: Build tcbee-viz
         run: |
@@ -62,7 +61,7 @@ jobs:
         run: |
           mkdir -p release
           cp tcbee-record/target/x86_64-unknown-linux-musl/release/tcbee-record release/
-          cp tcbee-process/target/x86_64-unknown-linux-musl/release/tcbee-process release/
+          cp tcbee-process/target/release/tcbee-process release/
           cp tcbee-viz/target/release/tcbee-viz release/
           cp tcbee-live/target/release/tcbee-live release/
           cp tcbee release/
