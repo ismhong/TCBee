@@ -7,9 +7,21 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: ubuntu-latest
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            zip-arch: x86_64
+          - runs-on: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+            zip-arch: aarch64
 
     steps:
       - uses: actions/checkout@v4
@@ -32,41 +44,76 @@ jobs:
       - name: Install Rust Nightly
         run: rustup toolchain install nightly --component rust-src
 
+      - name: Add Rust target
+        if: matrix.arch == 'arm64'
+        run: rustup target add aarch64-unknown-linux-gnu
+
       - name: Install bpf-linker
-        run: cargo install bpf-linker
+        run: |
+          # Download pre-built binary from GitHub releases (uses musl target)
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ARCHIVE="bpf-linker-aarch64-unknown-linux-musl.tar.gz"
+          else
+            ARCHIVE="bpf-linker-x86_64-unknown-linux-musl.tar.gz"
+          fi
+          curl -sSL "https://github.com/aya-rs/bpf-linker/releases/latest/download/$ARCHIVE" | tar -xz -C ~/.cargo/bin/
+          chmod +x ~/.cargo/bin/bpf-linker
 
       - name: Build tcbee-record
         run: |
           cd tcbee-record
-          cargo build --release
+          cargo build --release --target ${{ matrix.target }}
 
       - name: Build tcbee-process (bundled)
         run: |
           cd tcbee-process
-          cargo build --release --features ts_storage/bundled
+          cargo build --release --features ts_storage/bundled --target ${{ matrix.target }}
 
       - name: Build tcbee-viz
         run: |
           cd tcbee-viz
-          cargo build --release --features ts_storage/bundled
+          cargo build --release --features ts_storage/bundled --target ${{ matrix.target }}
 
       - name: Build tcbee-live
         run: |
           cd tcbee-live
-          cargo build --release
+          cargo build --release --target ${{ matrix.target }}
 
       - name: Package release zip
         run: |
           mkdir -p release
-          cp tcbee-record/target/release/tcbee-record release/
-          cp tcbee-process/target/release/tcbee-process release/
-          cp tcbee-viz/target/release/tcbee-viz release/
-          cp tcbee-live/target/release/tcbee-live release/
+          cp tcbee-record/target/${{ matrix.target }}/release/tcbee-record release/
+          cp tcbee-process/target/${{ matrix.target }}/release/tcbee-process release/
+          cp tcbee-viz/target/${{ matrix.target }}/release/tcbee-viz release/
+          cp tcbee-live/target/${{ matrix.target }}/release/tcbee-live release/
           cp tcbee release/
           cp LICENSE release/
           cp NOTICES release/
           chmod +x release/tcbee
-          zip -j "tcbee-${{ github.ref_name }}-linux-x86_64.zip" release/*
+          zip -j "tcbee-${{ github.ref_name }}-linux-${{ matrix.zip-arch }}.zip" release/*
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcbee-${{ matrix.zip-arch }}
+          path: "tcbee-${{ github.ref_name }}-linux-${{ matrix.zip-arch }}.zip"
+          retention-days: 5
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          find artifacts -type f -name "*.zip"
 
       - name: Create release
         env:
@@ -74,5 +121,6 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "TCBee ${{ github.ref_name }}" \
-            --generate-notes \
-            "tcbee-${{ github.ref_name }}-linux-x86_64.zip"
+            --generate-notes
+          find artifacts -type f -name "*.zip" \
+            -exec gh release upload "${{ github.ref_name }}" {} \+
