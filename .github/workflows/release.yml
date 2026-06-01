@@ -5,9 +5,14 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
     permissions:
       contents: write
     strategy:
